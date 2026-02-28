@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from bot.config import BOT_TOKEN, ADMIN_ID
+from bot.config import BOT_TOKEN, ADMIN_ID, ADMIN_USERNAME
 from bot.handlers.clients import (
     add_client_cmd, list_clients_handler,
     show_clients_for_delete, delete_client_callback
@@ -42,14 +42,17 @@ def is_admin(user_id):
 
 def main_menu(user_id=None):
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    # Asosiy tugmalar (barcha foydalanuvchilar uchun)
     buttons = [
         KeyboardButton("➕ Klient qo'shish"),
         KeyboardButton("📋 Klientlar ro'yxati"),
         KeyboardButton("🛍 Buyurtma qo'shish"),
         KeyboardButton("📊 Excel export"),
         KeyboardButton("🗑 O'chirish"),
-        KeyboardButton("⚙️ Sozlamalar")
+        KeyboardButton("⚙️ Sozlamalar"),
+        KeyboardButton("👤 Admin")  # Admin bilan bog'lanish tugmasi
     ]
+    # Agar foydalanuvchi admin bo'lsa, yana bir tugma qo'shamiz
     if user_id and is_admin(user_id):
         buttons.append(KeyboardButton("👥 Foydalanuvchilar"))
     keyboard.add(*buttons)
@@ -292,6 +295,32 @@ async def handle_reset(message: types.Message):
         del reset_sessions[user_id]
         await message.answer("✅ Parol muvaffaqiyatli o‘zgartirildi. Endi tizimga kirdingiz.", reply_markup=main_menu(user_id))
 
+# -------------------- ADMIN TUGMASI (hamma ko‘radi) --------------------
+@dp.message_handler(lambda msg: msg.text == "👤 Admin")
+@authenticated_only
+async def handle_admin_button(message: types.Message):
+    """Admin bilan bog'lanish haqida chiroyli ma'lumot"""
+    from bot.config import ADMIN_USERNAME
+    
+    if ADMIN_USERNAME:
+        # Chiroyli formatlangan xabar
+        text = (
+            "📢 **Admin bilan bog‘lanish**\n\n"
+            f"👤 **Username:** @{ADMIN_USERNAME}\n"
+            "💬 **Murojaat uchun:** Yuqoridagi username orqali yozishingiz mumkin.\n\n"
+            "📌 *Eslatma: Admin faqat muhim masalalar bo‘yicha javob beradi.*"
+        )
+        # Inline tugma qo'shamiz (ixtiyoriy)
+        keyboard = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("📩 Admin ga yozish", url=f"https://t.me/{ADMIN_USERNAME}")
+        )
+        await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await message.answer(
+            "❌ **Admin maʼlumoti mavjud emas.**\n"
+            "Iltimos, keyinroq urinib koʻring yoki administrator bilan bogʻlaning.",
+            parse_mode="Markdown"
+        )
 # -------------------- SOZLAMALAR MENYUSI --------------------
 @dp.message_handler(lambda msg: msg.text == "⚙️ Sozlamalar")
 @authenticated_only
@@ -376,7 +405,7 @@ async def handle_change_password(message: types.Message):
         del change_password_sessions[user_id]
         await message.answer("✅ Parol muvaffaqiyatli o‘zgartirildi!", reply_markup=main_menu(user_id))
 
-# -------------------- FOYDALANUVCHILAR TUGMASI (REPLY) --------------------
+# -------------------- FOYDALANUVCHILAR TUGMASI (faqat admin) --------------------
 @dp.message_handler(lambda msg: msg.text == "👥 Foydalanuvchilar")
 @authenticated_only
 async def handle_users_button(message: types.Message):
@@ -426,7 +455,6 @@ async def users_command(message: types.Message):
         return
     await list_users(message)
 
-# -------------------- Tuzatilgan callback handlerlar --------------------
 @dp.callback_query_handler(lambda c: c.data.startswith('ban_') and c.data.split('_')[1].isdigit())
 async def ban_user_callback(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -501,17 +529,6 @@ async def unban_user_cmd(message: types.Message):
     except ValueError:
         await message.answer("❌ user_id son bo‘lishi kerak.")
 
-# -------------------- O'CHIRISH TUGMASI (REPLY) --------------------
-@dp.message_handler(lambda msg: msg.text == "🗑 O'chirish")
-@authenticated_only
-async def handle_delete_button(message: types.Message):
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("👤 Klient o'chirish", callback_data="delete_choose_client"),
-        InlineKeyboardButton("📦 Buyurtma o'chirish", callback_data="delete_choose_order")
-    )
-    await message.answer("Nimani o'chirmoqchisiz?", reply_markup=keyboard)
-
 # -------------------- O'CHIRISH CALLBACKLARI (client/order) --------------------
 @dp.callback_query_handler(lambda c: c.data == "delete_choose_client")
 async def process_delete_client_choice(callback: types.CallbackQuery):
@@ -563,6 +580,16 @@ async def handle_add_order_button(message: types.Message):
 @authenticated_only
 async def handle_export_button(message: types.Message):
     await export_orders_excel(message)
+
+@dp.message_handler(lambda msg: msg.text == "🗑 O'chirish")
+@authenticated_only
+async def handle_delete_button(message: types.Message):
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("👤 Klient o'chirish", callback_data="delete_choose_client"),
+        InlineKeyboardButton("📦 Buyurtma o'chirish", callback_data="delete_choose_order")
+    )
+    await message.answer("Nimani o'chirmoqchisiz?", reply_markup=keyboard)
 
 # -------------------- UNIVERSAL HANDLER --------------------
 @dp.message_handler(lambda message: "," in message.text)
